@@ -124,7 +124,7 @@ CFDictionaryRef APCreateDictionaryForLicenseData(CFDataRef data)
     
     CFDataRef sigData = CFDictionaryGetValue(licenseDictionary, CFSTR("Signature"));
 	CFIndex sigDataLength = CFDataGetLength(sigData);
-	UInt8 sigBytes[sigDataLength];
+	UInt8 *sigBytes = malloc(sizeof(UInt8) * sigDataLength);
     CFDataGetBytes(sigData, CFRangeMake(0, sigDataLength), sigBytes);
     CFDictionaryRemoveValue(licenseDictionary, CFSTR("Signature"));
     
@@ -132,11 +132,13 @@ CFDictionaryRef APCreateDictionaryForLicenseData(CFDataRef data)
 	int checkDigestMaxSize = RSA_size(rsaKey)-11;
     unsigned char checkDigest[checkDigestMaxSize];
 	
-    if (sigDataLength < 0 || sigDataLength > INT_MAX ||
-		RSA_public_decrypt((int)sigDataLength, sigBytes, checkDigest, rsaKey, RSA_PKCS1_PADDING) != SHA_DIGEST_LENGTH) {
+    if (sigDataLength < 0 || sigDataLength > INT_MAX || RSA_public_decrypt((int)sigDataLength, sigBytes, checkDigest, rsaKey, RSA_PKCS1_PADDING) != SHA_DIGEST_LENGTH) {
+		free(sigBytes);
         CFRelease(licenseDictionary);
         return NULL;
     }
+	else
+		free(sigBytes);
     
     // Get the license hash
     CFMutableStringRef hashCheck = CFStringCreateMutable(kCFAllocatorDefault,0);
@@ -153,11 +155,12 @@ CFDictionaryRef APCreateDictionaryForLicenseData(CFDataRef data)
     CFIndex count = CFDictionaryGetCount(licenseDictionary);
     // Load the keys and build up the key array
     CFMutableArrayRef keyArray = CFArrayCreateMutable(kCFAllocatorDefault, count, NULL);
-    CFStringRef keys[count];
-    CFDictionaryGetKeysAndValues(licenseDictionary, (const void**)&keys, NULL);
+    CFStringRef *keys = malloc(sizeof(CFStringRef) * count);
+    CFDictionaryGetKeysAndValues(licenseDictionary, (const void**)keys, NULL);
     int i;
     for (i = 0; i < count; i++)
         CFArrayAppendValue(keyArray, keys[i]);
+	free(keys);
     
     // Sort the array
     int context = kCFCompareCaseInsensitive;
