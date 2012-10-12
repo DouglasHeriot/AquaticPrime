@@ -25,8 +25,6 @@
 // OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <CoreFoundation/CoreFoundation.h>
-#include <openssl/rsa.h>
-#include <openssl/sha.h>
 
 // Set the key - must be called first
 Boolean APSetKey(CFStringRef key);

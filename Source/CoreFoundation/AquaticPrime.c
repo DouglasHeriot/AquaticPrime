@@ -26,6 +26,10 @@
 
 #include "AquaticPrime.h"
 
+#include <openssl/rsa.h>
+#include <openssl/sha.h>
+
+
 static RSA *rsaKey;
 static __strong CFStringRef hash;
 static __strong CFMutableArrayRef blacklist;
