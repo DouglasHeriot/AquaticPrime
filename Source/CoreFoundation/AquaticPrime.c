@@ -72,7 +72,7 @@ Boolean APSetKey(CFStringRef key)
     return TRUE;
 }
 
-CFStringRef APHash(void)
+CFStringRef APCopyHash(void)
 {
     return CFStringCreateCopy(kCFAllocatorDefault, hash);
 }
