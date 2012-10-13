@@ -222,7 +222,7 @@ CFDictionaryRef APCreateDictionaryForLicenseFile(CFURLRef path)
     Boolean status;
     status = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, path, &data, NULL, NULL, &errorCode);
     
-    if (errorCode || status != true)
+    if (errorCode || status != true || !data)
         return NULL;
     
     CFDictionaryRef licenseDictionary = APCreateDictionaryForLicenseData(data);
