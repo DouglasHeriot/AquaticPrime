@@ -106,6 +106,9 @@ void APBlacklistAdd(CFStringRef blacklistEntry)
 
 CFDictionaryRef APCreateDictionaryForLicenseData(CFDataRef data)
 {
+	if(!data)
+		return NULL;
+	
     if (!rsaKey->n || !rsaKey->e)
         return NULL;
     
@@ -113,9 +116,14 @@ CFDictionaryRef APCreateDictionaryForLicenseData(CFDataRef data)
     CFStringRef errorString = NULL;
     CFPropertyListRef propertyList;
     propertyList = CFPropertyListCreateFromXMLData(kCFAllocatorDefault, data, kCFPropertyListMutableContainers, &errorString);
-    if (errorString || CFDictionaryGetTypeID() != CFGetTypeID(propertyList) || !CFPropertyListIsValid(propertyList, kCFPropertyListXMLFormat_v1_0)) {
+    if (errorString || CFDictionaryGetTypeID() != CFGetTypeID(propertyList) || !CFPropertyListIsValid(propertyList, kCFPropertyListXMLFormat_v1_0))
+	{
         if (propertyList)
             CFRelease(propertyList);
+		
+		if(errorString)
+			CFRelease(errorString);
+		
         return NULL;
     }
     
