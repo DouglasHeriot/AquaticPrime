@@ -7,12 +7,12 @@
 //
 // Redistribution and use in source and binary forms, with or without modification,
 // are permitted provided that the following conditions are met:
-//	¥Redistributions of source code must retain the above copyright notice,
+//	*Redistributions of source code must retain the above copyright notice,
 //	 this list of conditions and the following disclaimer.
-//	¥Redistributions in binary form must reproduce the above copyright notice,
+//	*Redistributions in binary form must reproduce the above copyright notice,
 //	 this list of conditions and the following disclaimer in the documentation and/or
 //	 other materials provided with the distribution.
-//	¥Neither the name of the Aquatic nor the names of its contributors may be used to 
+//	*Neither the name of the Aquatic nor the names of its contributors may be used to 
 //	 endorse or promote products derived from this software without specific prior written permission.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
@@ -27,17 +27,56 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <stdexcept>
 
-// Set the key - must be called first
-bool APSetKey(std::string key);
+#ifndef AquaticPrimeSTL_h
+#define AquaticPrimeSTL_h
 
-// Validating & extracting licenses
-std::map<std::string, std::string> APCreateDictionaryForLicenseData(std::map<std::string, std::string> data);
-std::map<std::string, std::string> APCreateDictionaryForLicenseFile(std::string path);
-bool APVerifyLicenseData(std::map<std::string, std::string> data);
-bool APVerifyLicenseFile(std::string path);
+extern "C" struct rsa_st;
+typedef struct rsa_st RSA;
 
-std::string APHash(void);
-void APBlacklistAdd(std::string blacklistEntry);
-void APSetBlacklist(std::vector<std::string> hashArray);
+namespace AP
+{
+	struct License
+	{
+		License(std::map<std::string, std::string> dictionary, std::string hash);
+		std::map<std::string, std::string> dictionary;
+		std::string hash;
+	};
+		
+	class LicenseException : public std::runtime_error
+	{
+	public:
+		LicenseException(const std::string &what);
+	};
+	
+	class AquaticPrime
+	{
+	private:
+		RSA *rsaKey;
+		std::vector<std::string> blacklist;
 
+	public:
+		AquaticPrime(std::string key);
+		~AquaticPrime();
+		
+		// No copy constructor
+		AquaticPrime(const AquaticPrime& that) = delete;
+
+		// Validating & extracting licenses
+		// These will throw a LicenseException on invalid license
+		License createLicenseFromMap(std::map<std::string, std::string> data) const;
+		License createLicenseFromFile(std::string path) const;
+		License createLicenseFromXMLString(std::string xmlString) const;
+		
+		// These will catch the LicenseError for you and turn into a bool
+		bool verifyLicenseMap(std::map<std::string, std::string> data) const noexcept;
+		bool verifyLicenseFile(std::string path) const noexcept;
+		bool verifyLicenseXMLString(std::string path) const noexcept;
+		
+		void blacklistAdd(std::string hash);
+		void setBlacklist(std::vector<std::string> hashArray);
+	};
+}
+
+#endif

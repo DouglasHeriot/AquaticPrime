@@ -7,12 +7,12 @@
 //
 // Redistribution and use in source and binary forms, with or without modification,
 // are permitted provided that the following conditions are met:
-//	¥Redistributions of source code must retain the above copyright notice,
+//	*Redistributions of source code must retain the above copyright notice,
 //	 this list of conditions and the following disclaimer.
-//	¥Redistributions in binary form must reproduce the above copyright notice,
+//	*Redistributions in binary form must reproduce the above copyright notice,
 //	 this list of conditions and the following disclaimer in the documentation and/or
 //	 other materials provided with the distribution.
-//	¥Neither the name of the Aquatic nor the names of its contributors may be used to 
+//	*Neither the name of the Aquatic nor the names of its contributors may be used to 
 //	 endorse or promote products derived from this software without specific prior written permission.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
@@ -28,23 +28,26 @@
 #include "tinyxml2.h"
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
-#include <stdarg.h>
+#include <cctype>
+#include <new>
 
 extern "C" {
 	#include <b64/b64.h>
 }
 
-static RSA *rsaKey;
-static std::string hash;
-static std::vector<std::string> blacklist;
+using namespace AP;
 
-// utilities
-inline char ToLower(char in)
+
+// Utilities
+
+static License APCreateLicenseForLicenseXMLDocument(const AquaticPrime &ap, tinyxml2::XMLDocument &licenseFile);
+
+static inline char ToLower(char in)
 {
-	return (char)tolower((int)in);
+	return (char)std::tolower((int)in);
 }
 
-const char* CreateCString(std::string output, ...)
+static const char* CreateCString(std::string output, ...)
 {
 	static char text[256];
 	va_list	ap;
@@ -56,20 +59,35 @@ const char* CreateCString(std::string output, ...)
 	return (const char*)text;
 }
 
-bool APSetKey(std::string key)
+
+License::License(std::map<std::string, std::string> dictionary, std::string hash):
+dictionary(dictionary),
+hash(hash)
 {
-	hash = std::string("");
+}
+
+LicenseException::LicenseException(const std::string &what):
+std::runtime_error(what)
+{
+}
+
+// AquaticPrime class
+
+AquaticPrime::AquaticPrime(const std::string key):
+rsaKey(RSA_new())
+{
+	if(rsaKey == nullptr)
+	{
+		throw std::bad_alloc();
+	}
 	
-	// Create a new key
-    rsaKey = RSA_new();
-    
-    // Public exponent is always 3
+	// Public exponent is always 3
 	BN_hex2bn(&rsaKey->e, "3");
 	
 	std::string mutableKey = key;
-    
-    // Determine if we have a hex or decimal key
-	std::transform(mutableKey.begin(), mutableKey.end(), mutableKey.begin(), ToLower); // make mutableKey lowercase
+	
+	// Determine if we have a hex or decimal key
+	std::transform(key.begin(), key.end(), mutableKey.begin(), ToLower); // make mutableKey lowercase
 	if(std::string(mutableKey, 0, 2) == "0x")
 	{
 		mutableKey = std::string(mutableKey, 2, mutableKey.length());
@@ -79,71 +97,54 @@ bool APSetKey(std::string key)
 	{
 		BN_dec2bn(&rsaKey->n, mutableKey.c_str());
 	}
-	
-	return true;
 }
 
-std::string APHash(void)
+AquaticPrime::~AquaticPrime()
 {
-	return hash;
-}
-
-void APSetHash(std::string newHash)
-{
-	hash = newHash;
+	RSA_free(rsaKey);
 }
 
 // Set the entire blacklist array, removing any existing entries
-void APSetBlacklist(std::vector<std::string> hashArray)
+void AquaticPrime::setBlacklist(std::vector<std::string> hashArray)
 {
 	blacklist = hashArray;
 }
 
-void APBlacklistAdd(std::string blacklistEntry)
+void AquaticPrime::blacklistAdd(std::string blacklistEntry)
 {
 	blacklist.push_back(blacklistEntry);
 }
 
-std::map<std::string, std::string> APCreateDictionaryForLicenseData(std::map<std::string, std::string> data)
-{
+License AquaticPrime::createLicenseFromMap(std::map<std::string, std::string> data) const
+{	
 	if (!rsaKey->n || !rsaKey->e)
 	{
-		std::map<std::string, std::string> empty;
-		printf("0\n");
-		return empty;
+		throw LicenseException("RSA key is invalid");
 	}
 	
 	// Load the signature
 	unsigned char sigBytes[128];
 	std::map<std::string, std::string>::iterator signature = data.find("Signature");
 
-    if(signature == data.end())
+	if(signature == data.end())
 	{
-		std::map<std::string, std::string> empty;
-//		printf("1\n");
-		return empty;
+		throw LicenseException("Invalid license data â€“ no signature");
 	}
-	else 
+	
+	const int returnVal = b64decode(data["Signature"].c_str(), data["Signature"].length(), sigBytes, 129);
+	
+	if(returnVal == 0)
 	{
-		int returnVal = b64decode(data["Signature"].c_str(), data["Signature"].length(), sigBytes, 129);
-		
-		if(returnVal == 0)
-		{
-			std::map<std::string, std::string> empty;
-	//		printf("1.5\n");
-			return empty;
-		}
-		
-		data.erase(signature);
+		throw LicenseException("Signature has invalid base-64 encoding");
 	}
+	
+	data.erase(signature);
 	
 	// Decrypt the signature
 	unsigned char checkDigest[128] = {0};
 	if (RSA_public_decrypt(128, sigBytes, checkDigest, rsaKey, RSA_PKCS1_PADDING) != SHA_DIGEST_LENGTH)
-    {
-		std::map<std::string, std::string> empty;
-//		printf("2\n");
-		return empty;
+	{
+		throw LicenseException("Signature is invalid");
 	}
 
 	// Get the license hash
@@ -151,19 +152,13 @@ std::map<std::string, std::string> APCreateDictionaryForLicenseData(std::map<std
 	int hashIndex;
 	for (hashIndex = 0; hashIndex < SHA_DIGEST_LENGTH; hashIndex++)
 		hashCheck += CreateCString("%02x", checkDigest[hashIndex]);
-	APSetHash(hashCheck);
 	
-	if (blacklist.size() > 0)
+	// Check hash against blacklist
+	for(const auto &blacklistEntry : blacklist)
 	{
-		// $$ is this right?
-		for(auto b = blacklist.begin(); b != blacklist.end(); ++b)
+		if(hashCheck == blacklistEntry)
 		{
-			if(data.find((*b)) != data.end())
-			{
-				std::map<std::string, std::string> empty;
-//				printf("3\n");
-				return empty;
-			}
+			throw LicenseException("License is blacklisted");
 		}
 	}
 	
@@ -203,28 +198,42 @@ std::map<std::string, std::string> APCreateDictionaryForLicenseData(std::map<std
 	{
 		if (checkDigest[i] ^ digest[i]) 
 		{
-			std::map<std::string, std::string> empty;
-//			printf("4\n");
-			return empty;
-        }
+			throw LicenseException("License signature does not match the license data");
+		}
 	}
 
 	// If it's a match, we return the dictionary; otherwise, we never reach this
-	return data;
+	return License(std::move(data), hashCheck);
 }
 
-std::map<std::string, std::string> APCreateDictionaryForLicenseFile(std::string path)
+License AquaticPrime::createLicenseFromFile(std::string path) const
 {
-	std::map<std::string, std::string> xmlData;
-	
-	tinyxml2::XMLNode *node = 0;
 	tinyxml2::XMLDocument licenseFile;
 	licenseFile.LoadFile(path.c_str());
+	return APCreateLicenseForLicenseXMLDocument(*this, licenseFile);
+}
+
+License AquaticPrime::createLicenseFromXMLString(std::string xmlString) const
+{
+	tinyxml2::XMLDocument licenseFile;
+	licenseFile.Parse(xmlString.c_str(), xmlString.size());
+	return APCreateLicenseForLicenseXMLDocument(*this, licenseFile); 
+}
+
+License APCreateLicenseForLicenseXMLDocument(const AquaticPrime &ap, tinyxml2::XMLDocument &licenseFile)
+{
+	std::map<std::string, std::string> xmlData;
+	tinyxml2::XMLNode *node = 0;
 	
 	node = licenseFile.FirstChildElement("plist");
-	if(node == NULL) return xmlData;
+	
+	if(node == nullptr)
+		throw LicenseException("XML does not contain <plist> root node");
+	
 	node = node->FirstChildElement("dict");
-	if(node == NULL) return xmlData;
+	
+	if(node == nullptr)
+		throw LicenseException("XML does not contain <dict> node");
 	
 	do
 	{
@@ -277,27 +286,44 @@ std::map<std::string, std::string> APCreateDictionaryForLicenseFile(std::string 
 		node = node->NextSibling();
 	} while(node != NULL);
 
-	std::map<std::string, std::string> licenseDictionary = APCreateDictionaryForLicenseData(xmlData);
-
-	return licenseDictionary;
+	return ap.createLicenseFromMap(xmlData);
 }
 
-bool APVerifyLicenseData(std::map<std::string, std::string> data)
+bool AquaticPrime::verifyLicenseMap(std::map<std::string, std::string> data) const noexcept
 {
-	std::map<std::string, std::string> licenseDictionary = APCreateDictionaryForLicenseData(data);
-	
-	if (licenseDictionary.size() > 0)
+	try
+	{
+		const auto license = createLicenseFromMap(data);
 		return true;
-	else
+	}
+	catch(const LicenseException &e)
+	{
 		return false;
+	}
 }
 
-bool APVerifyLicenseFile(std::string path)
+bool AquaticPrime::verifyLicenseFile(std::string path) const noexcept
 {
-	std::map<std::string, std::string> licenseDictionary = APCreateDictionaryForLicenseFile(path);
-
-	if (licenseDictionary.size() > 0)
+	try
+	{
+		const auto license = createLicenseFromFile(path);
 		return true;
-	else
+	}
+	catch(const LicenseException &e)
+	{
 		return false;
+	}
+}
+
+bool AquaticPrime::verifyLicenseXMLString(std::string data) const noexcept
+{
+	try
+	{
+		const auto license = createLicenseFromXMLString(data);
+		return true;
+	}
+	catch(const LicenseException &e)
+	{
+		return false;
+	}
 }
