@@ -30,6 +30,7 @@
 #include <openssl/sha.h>
 #include <cctype>
 #include <new>
+#include <algorithm>
 
 extern "C" {
 	#include <b64/b64.h>
